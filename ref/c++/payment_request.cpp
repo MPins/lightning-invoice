@@ -51,61 +51,31 @@ bool convertbits(bool pad, int frombits, int tobits, data& out, const data& in) 
     return true;
 }
 
-/* If pad is false, we discard any bits which don't fit in the last byte.
- * Otherwise we add an extra byte.  Returns error string or NULL on success. */
-static const char *pull_bits(struct hash_u5 *hu5,
-			     const u5 **data, size_t *data_len,
-			     void *dst, size_t nbits,
-			     bool pad)
-{
-	size_t n5 = nbits / 5;
-	size_t len = 0;
-
-	if (nbits % 5)
-		n5++;
-
-	if (*data_len < n5)
-		return "truncated";
-	if (!bech32_convert_bits(dst, &len, 8, *data, n5, 5, pad))
-		return "non-zero trailing bits";
-	if (hu5)
-		hash_u5(hu5, *data, n5);
-	*data += n5;
-	*data_len -= n5;
-
-	return NULL;
-}
-
 /* Helper for pulling a variable-length big-endian int. */
-static const char *pull_uint(struct hash_u5 *hu5,
-		      const u5 **data, size_t *data_len,
-		      u64 *val, size_t databits)
+bool pull_uint(const data& in,uint64_t* val, size_t databits)
 {
-	be64 be_val;
-	const char *err;
-
-	/* Too big. */
-	if (databits > sizeof(be_val) * CHAR_BIT)
-		return "integer too large";
-	err = pull_bits(hu5, data, data_len, &be_val, databits, true);
-	if (err)
-		return err;
-	if (databits == 0)
-		*val = 0;
-	else
-		*val = be64_to_cpu(be_val) >>
-		       (sizeof(be_val) * CHAR_BIT - databits);
-	return NULL;
+    data out;
+    int tobits = 8;
+    int frombits = 5;
+    *val = 0;
+    /* Padd if size variable is not multiple of tobits */
+    bool need_padding = (in.size() * tobits) % tobits == 0;
+    /* Conver frombits base tobits base*/    
+    if (!convertbits(need_padding, frombits, tobits, out, in)) return false;
+    /* take the tobits base bytes and calculate the decima value */
+    for (long unsigned int i = 0; i < out.size(); ++i)
+        *val |= static_cast<uint64_t>(out[i]) << (8 * (out.size()-i-1));
+    /* Adjust the shifitng to databits value*/
+    *val = *val >> (out.size() * 8 - databits);    
+    return true;
 }
-
-
 
 }
 
 namespace payment_request
 {
 
-std::vector<std::string> prefix = {"lnbc", "lntb", "lntbs", "lnbcrt"};
+std::vector<std::string> prefix_list = {"lnbc", "lntb", "lntbs", "lnbcrt"};
 
 /** Decode a Lightning Payment Request **/
 std::pair<int, data> decode(const std::string& invoice) {
@@ -155,8 +125,13 @@ std::pair<int, data> decode(const std::string& invoice) {
             }
         }
     }
-    if(std::find(prefix.begin(), prefix.end(), hrp_prefix) == prefix.end())
+    /* if it does NOT understand the prefix MUST fail the payment.*/
+    if(std::find(prefix_list.begin(), prefix_list.end(), hrp_prefix) == prefix_list.end())
         return std::make_pair(-1, data());
+    /* Take the timesatamp of the invoice */
+    uint64_t timestamp = 0;
+    if(!pull_uint(data(dec.data.begin(), dec.data.begin()+7), &timestamp, 35)) return std::make_pair(-1, data());;
+
     data conv;
     int tobits = 8;
     int frombits = 5;
