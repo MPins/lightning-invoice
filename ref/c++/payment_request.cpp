@@ -128,18 +128,53 @@ std::pair<int, data> decode(const std::string& invoice) {
     /* if it does NOT understand the prefix MUST fail the payment.*/
     if(std::find(prefix_list.begin(), prefix_list.end(), hrp_prefix) == prefix_list.end())
         return std::make_pair(-1, data());
-    /* Take the timesatamp of the invoice */
+    /* Take the timesatamp of the invoice*/
     uint64_t timestamp = 0;
     if(!pull_uint(data(dec.data.begin(), dec.data.begin()+7), &timestamp, 35)) return std::make_pair(-1, data());;
 
-    data conv;
+    uint64_t data_lenght = 0;
+    data conv, preimage, secret;
     int tobits = 8;
     int frombits = 5;
-    bool need_padding = ((dec.data.size()) * tobits) % tobits == 0;   
-    if (!convertbits(need_padding, frombits, tobits,conv, data(dec.data.begin(), dec.data.end())) || conv.size() < 2 ) {
-        return std::make_pair(-1, data());
-    }
-    return std::make_pair(1, conv);
+    int data_part_pointer = 7;
+    do {
+        conv = {};
+        data_part_pointer += data_lenght;
+        if(!pull_uint(data(dec.data.begin() + data_part_pointer + 1, dec.data.begin() + data_part_pointer + 3), &data_lenght, 10)) return std::make_pair(-1, data());
+        bool need_padding = (data_lenght * tobits) % tobits == 0;   
+        if (!convertbits(need_padding, frombits, tobits,conv, data(dec.data.begin() + data_part_pointer + 3, dec.data.begin() + data_part_pointer + 3 + data_lenght))) {
+            return std::make_pair(-1, data());
+        }
+        switch(dec.data[data_part_pointer]){
+            case 1:                             // 'p' Preimage of this provides proof of payment.
+                preimage = conv;
+                break;
+            case 16:                            // 's' This 256-bit secret prevents forwarding nodes from probing the payment recipient.
+               secret = conv;
+                break;
+            case 'd':                           // Short description of purpose of payment (UTF-8)
+                break;
+            case 'm':                           // Additional metadata to attach to the payment.
+                break;
+            case 'h':                           // 256-bit description of purpose of payment (SHA256).
+                break;
+            case 'x':                           // expiry time in seconds (big-endian). Default is 3600 (1 hour) if not specified.
+                break;
+            case 'c':                           // min_final_cltv_expiry_delta to use for the last HTLC in the route. Default is 18 if not specified.
+                break;
+            case 'f':                           // variable, depending on version. Fallback on-chain address: for Bitcoin, this starts with a 5-bit version and contains a witness program or P2PKH or P2SH address.
+                break;
+            case 'r':                           // One or more entries containing extra routing information for a private route; there may be more than one r field
+                break;
+            case '9':
+                break;
+            default:                            // MUST skip over unknown fields
+                break;
+        }
+
+    } while (true);
+ 
+
 }
 
 }
