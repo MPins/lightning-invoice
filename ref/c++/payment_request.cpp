@@ -22,6 +22,11 @@
 #include "bech32.h"
 
 #include <tuple>
+#include <sstream>
+
+#include <iostream>
+#include <iomanip>
+#include <sstream>
 
 namespace
 {
@@ -49,6 +54,14 @@ bool convertbits(bool pad, int frombits, int tobits, data& out, const data& in) 
         return false;
     }
     return true;
+}
+
+// Function to convert a byte array to a hexadecimal array
+void bytes_to_hex(const std::vector<unsigned char>& in, char* out) {
+    for (size_t i = 0; i < in.size(); i++) {
+        out[i*2] = in[i] >> 4;
+        out[i*2+1] = in[i] & 0x0F;
+    }
 }
 
 /* Helper for pulling a variable-length big-endian int. */
@@ -133,13 +146,14 @@ std::pair<int, data> decode(const std::string& invoice) {
     if(!pull_uint(data(dec.data.begin(), dec.data.begin()+7), &timestamp, 35)) return std::make_pair(-1, data());;
 
     uint64_t data_lenght = 0;
-    data conv, preimage, secret;
+    data conv;
+    char preimage[64]; 
+    char secret[64];
     int tobits = 8;
     int frombits = 5;
-    int data_part_pointer = 7;
+    int data_part_pointer = 7; // timestamp lenght
     do {
         conv = {};
-        data_part_pointer += data_lenght;
         if(!pull_uint(data(dec.data.begin() + data_part_pointer + 1, dec.data.begin() + data_part_pointer + 3), &data_lenght, 10)) return std::make_pair(-1, data());
         bool need_padding = (data_lenght * tobits) % tobits == 0;   
         if (!convertbits(need_padding, frombits, tobits,conv, data(dec.data.begin() + data_part_pointer + 3, dec.data.begin() + data_part_pointer + 3 + data_lenght))) {
@@ -147,10 +161,10 @@ std::pair<int, data> decode(const std::string& invoice) {
         }
         switch(dec.data[data_part_pointer]){
             case 1:                             // 'p' Preimage of this provides proof of payment.
-                preimage = conv;
+                bytes_to_hex(conv, preimage);
                 break;
             case 16:                            // 's' This 256-bit secret prevents forwarding nodes from probing the payment recipient.
-               secret = conv;
+                bytes_to_hex(conv, secret);
                 break;
             case 'd':                           // Short description of purpose of payment (UTF-8)
                 break;
@@ -171,7 +185,7 @@ std::pair<int, data> decode(const std::string& invoice) {
             default:                            // MUST skip over unknown fields
                 break;
         }
-
+        data_part_pointer += data_lenght + 3;
     } while (true);
  
 
