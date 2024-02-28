@@ -21,13 +21,6 @@
 #include "payment_request.h"
 #include "bech32.h"
 
-#include <tuple>
-#include <sstream>
-
-#include <iostream>
-#include <iomanip>
-#include <sstream>
-
 namespace
 {
 
@@ -87,7 +80,7 @@ bool pull_uint(const data& in,uint64_t* val, size_t databits)
 
 namespace payment_request
 {
-
+struct bolt11 payment_request;
 std::vector<std::string> prefix_list = {"lnbc", "lntb", "lntbs", "lnbcrt"};
 
 /** Decode a Lightning Payment Request **/
@@ -96,16 +89,16 @@ std::pair<int, data> decode(const std::string& invoice) {
     if (dec.data.size() < 1) return std::make_pair(-1, data());
     /* BOLT11 - if it does NOT understand the prefix MUST fail the payment. */
     /* First find the invoice value field into hrp */
-    std::string hrp_value, hrp_prefix;
+    std::string hrp_value;
     for (size_t i = 0; i < dec.hrp.size(); ++i) {
         if (isdigit(dec.hrp[i])) {
             hrp_value = dec.hrp.substr(i, dec.hrp.size()-1 );
-            hrp_prefix = dec.hrp.substr(0, i);
+            payment_request.prefix = dec.hrp.substr(0, i);
             break;
         }
     }
-    if(hrp_prefix == ""){                   /* If there is no value for the invoice */
-        hrp_prefix = dec.hrp;
+    if(hrp_value == ""){                   /* If there is no value for the invoice */
+        payment_request.prefix = dec.hrp;
     } else {
     /* Get the numeric value of the value hrp */
         size_t invoice_value = std::stoul(hrp_value.substr(0,hrp_value.size()-1));
@@ -117,20 +110,20 @@ std::pair<int, data> decode(const std::string& invoice) {
             Value will be calculated in msats
         */
         if(isdigit(hrp_value[hrp_value.size()-1])){
-            invoice_value = invoice_value*100000000*1000;                       // There is no multiplier
+            payment_request.sat_amount = invoice_value*100000000*1000;                       // There is no multiplier
         } else {
             switch (hrp_value[hrp_value.size()-1]) {
                 case 'm':
-                    invoice_value = invoice_value*100000000;                    //*0.001*100000000*1000;
+                    payment_request.sat_amount = invoice_value*100000000;                    //*0.001*100000000*1000;
                     break;
                 case 'u':
-                    invoice_value = invoice_value*100000;                       //*0.000001*100000000*1000;
+                    payment_request.sat_amount = invoice_value*100000;                       //*0.000001*100000000*1000;
                     break;
                 case 'n':
-                    invoice_value = invoice_value*100;                          //*0.000000001*100000000*1000;
+                    payment_request.sat_amount = invoice_value*100;                          //*0.000000001*100000000*1000;
                     break;
                 case 'p':
-                    invoice_value = invoice_value*0.1;                          //*0.000000000001*100000000*1000;
+                    payment_request.sat_amount = invoice_value*0.1;                          //*0.000000000001*100000000*1000;
                     break;
                 default:
                     return std::make_pair(-1, data());
@@ -139,11 +132,10 @@ std::pair<int, data> decode(const std::string& invoice) {
         }
     }
     /* if it does NOT understand the prefix MUST fail the payment.*/
-    if(std::find(prefix_list.begin(), prefix_list.end(), hrp_prefix) == prefix_list.end())
+    if(std::find(prefix_list.begin(), prefix_list.end(), payment_request.prefix) == prefix_list.end())
         return std::make_pair(-1, data());
     /* Take the timesatamp of the invoice*/
-    uint64_t timestamp = 0;
-    if(!pull_uint(data(dec.data.begin(), dec.data.begin()+7), &timestamp, 35)) return std::make_pair(-1, data());;
+    if(!pull_uint(data(dec.data.begin(), dec.data.begin()+7), &payment_request.timestamp, 35)) return std::make_pair(-1, data());;
 
     uint64_t data_lenght = 0;
     data conv;
